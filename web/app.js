@@ -77,7 +77,7 @@ for(const canvas of [wheel,bar]){
 
 function message(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
 function remember(id){try{id?localStorage.setItem('ribbonJob',id):localStorage.removeItem('ribbonJob');}catch{}}
-function busy(value){$('file').disabled=value;$('analyze').disabled=value;$('sample').disabled=value;$('remove').disabled=value||!job;}
+function busy(value){$('file').disabled=value;$('analyze').disabled=value;$('sample').disabled=value;$('remove').disabled=value||!job;$('load-library').disabled=value||!$('library').value;}
 function clear(){
  audio.pause();audio.removeAttribute('src');audio.load();data=null;lastTime=-1;dirty=true;
  $('settings').disabled=true;$('empty').hidden=false;$('track').textContent='';
@@ -90,6 +90,21 @@ async function request(url,options){
  if(!r.ok){let text;try{text=(await r.json()).detail;}catch{text='서버 응답을 읽을 수 없습니다.';}throw Error(typeof text==='string'?text:'요청을 처리할 수 없습니다.');}
  return r.json();
 }
+async function refreshLibrary(){
+ const selected=$('library').value;
+ const {items}=await request('/api/library');
+ $('library').replaceChildren(new Option('곡 선택',''));
+ for(const item of items)$('library').add(new Option(`${item.name} · ${Number(item.duration||0).toFixed(1)}초`,item.id));
+ $('library').value=items.some(item=>item.id===selected)?selected:items.some(item=>item.id===job?.id)?job.id:'';
+ $('load-library').disabled=$('analyze').disabled||!$('library').value;
+}
+$('library').addEventListener('change',()=>$('load-library').disabled=$('analyze').disabled||!$('library').value);
+$('load-library').onclick=async()=>{
+ const id=$('library').value;if(!id)return;
+ const token=++generation;clear();job=null;busy(true);
+ try{await follow(await request(`/api/jobs/${id}`),token);}
+ catch(e){if(token===generation){busy(false);message(e.message,true);await refreshLibrary().catch(()=>{});}}
+};
 
 function resize(){
  if(!renderer)return;
@@ -167,6 +182,7 @@ async function ready(state,token){
  $('track').textContent=state.name;$('settings').disabled=false;
  initializeVisual();busy(false);
  message(`분석 완료${state.cached?' · 기존 분석 결과 사용':''} · ${state.duration.toFixed(1)}초${visualError?' · '+visualError:''}`,!!visualError);
+ await refreshLibrary().catch(()=>{});
 }
 async function follow(state,token){
  while(token===generation){
@@ -206,13 +222,14 @@ document.addEventListener('drop',e=>{e.preventDefault();if(!$('analyze').disable
 $('remove').onclick=async()=>{
  if(!job)return;
  busy(true);
- try{await request(`/api/jobs/${job.id}`,{method:'DELETE'});++generation;clear();job=null;remember(null);message('이 곡의 분석 결과를 삭제했습니다.');}
+ try{await request(`/api/jobs/${job.id}`,{method:'DELETE'});++generation;clear();job=null;remember(null);message('이 곡의 분석 결과를 삭제했습니다.');await refreshLibrary();}
  catch(e){message(e.message,true);}
  finally{busy(false);}
 };
 
 (async()=>{
  try{
+  await refreshLibrary().catch(()=>{});
   const health=await request('/api/health');let id=health.active_id;
   if(!id)try{id=localStorage.getItem('ribbonJob');}catch{}
   if(id){busy(true);await follow(await request(`/api/jobs/${id}`),++generation);}

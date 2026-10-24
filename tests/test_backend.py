@@ -74,6 +74,8 @@ def test_failed_job_can_retry_and_be_deleted(client):
         time.sleep(.1)
     assert state['status']=='failed'
     assert state['message']
+    assert not (client.app.state.manager.root / jid / 'input.mp3').exists()
+    assert not (client.app.state.manager.root / jid / 'audio.wav').exists()
     assert client.get('/api/jobs/'+jid+'/features').status_code==409
     assert client.delete('/api/jobs/'+jid).status_code==200
     assert client.get('/api/jobs/'+jid).status_code==404
@@ -95,12 +97,25 @@ def test_cache_requires_complete_outputs(client):
     assert client.get('/api/jobs/'+jid).json()['status']=='failed'
 
 
+def test_library_lists_only_complete_songs_and_updates_after_delete(client):
+    root=client.app.state.manager.root
+    good='a'*64;incomplete='b'*64
+    for jid in [good,incomplete]:
+        path=root/jid;path.mkdir()
+        (path/'input.mp3').write_bytes(b'audio')
+        (path/'job.json').write_text(json.dumps({'id':jid,'source':'input.mp3','name':'song.mp3','duration':2.5,'status':'ready'}))
+    (root/good/'features.json').write_text('{"fps":50,"stems":{}}')
+    assert client.get('/api/library').json()=={'items':[{'id':good,'name':'song.mp3','duration':2.5}]}
+    assert client.delete('/api/jobs/'+good).status_code==200
+    assert client.get('/api/library').json()=={'items':[]}
+
+
 def test_completed_worker_cannot_be_overwritten_by_poll_race(client):
     manager=client.app.state.manager
-    jid='c'*64;path=manager.root/jid;path.mkdir();(path/'stems').mkdir()
-    state={'id':jid,'status':'separating','message':'분리 중'}
+    jid='c'*64;path=manager.root/jid;path.mkdir()
+    state={'id':jid,'source':'input.mp3','status':'separating','message':'분리 중'}
     (path/'job.json').write_text(json.dumps(state))
-    for name in ['audio.wav','features.json','stems/drums.wav','stems/bass.wav','stems/other.wav','stems/vocals.wav']:
+    for name in ['input.mp3','features.json']:
         (path/name).touch()
     # Substitute only the process scheduling boundary: the worker publishes and
     # exits between status's read and poll. The state-file reads/writes are real.
@@ -111,3 +126,38 @@ def test_completed_worker_cannot_be_overwritten_by_poll_race(client):
     manager.active_id=jid;manager.process=CompletedProcess()
     assert manager.status(jid)['status']=='ready'
     assert json.loads((path/'job.json').read_text())['status']=='ready'
+
+
+@pytest.mark.parametrize('suffix,media_type', [('.mp3', 'audio/mpeg'), ('.wav', 'audio/wav')])
+def test_existing_cache_drops_intermediates_and_plays_original(tmp_path, suffix, media_type):
+    jid='d'*64;path=tmp_path/jid;path.mkdir();(path/'stems').mkdir()
+    source='input'+suffix
+    payload=b'original audio bytes'
+    (path/source).write_bytes(payload)
+    (path/'features.json').write_text('{"fps":50,"stems":{}}')
+    (path/'audio.wav').write_bytes(b'decoded copy')
+    (path/'stems'/'other.wav').write_bytes(b'separated copy')
+    (path/'job.json').write_text(json.dumps({'id':jid,'source':source,'status':'ready'}))
+    with TestClient(create_app(tmp_path), base_url='http://127.0.0.1:8765') as app:
+        assert app.get('/api/jobs/'+jid).json()['status']=='ready'
+        response=app.get('/api/jobs/'+jid+'/audio')
+        assert response.content==payload
+        assert response.headers['content-type'].startswith(media_type)
+        assert response.headers['cache-control']=='no-store'
+        assert app.get('/api/jobs/'+jid+'/features').json()['fps']==50
+    assert not (path/'audio.wav').exists()
+    assert not (path/'stems').exists()
+    assert (path/source).read_bytes()==payload
+
+
+def test_interrupted_job_drops_unusable_audio_on_restart(tmp_path):
+    jid='e'*64;path=tmp_path/jid;path.mkdir();(path/'stems').mkdir()
+    (path/'input.mp3').write_bytes(b'uploaded file')
+    (path/'audio.wav').write_bytes(b'temporary decoded file')
+    (path/'stems'/'bass.wav').write_bytes(b'temporary stem')
+    (path/'job.json').write_text(json.dumps({'id':jid,'source':'input.mp3','status':'separating'}))
+    with TestClient(create_app(tmp_path), base_url='http://127.0.0.1:8765') as app:
+        assert app.get('/api/jobs/'+jid).json()['status']=='failed'
+    assert not (path/'input.mp3').exists()
+    assert not (path/'audio.wav').exists()
+    assert not (path/'stems').exists()

@@ -10,6 +10,7 @@ Turn an MP3 or WAV file into animated 3D ribbons in your browser. Music Ribbon r
 - A different, repeatable ribbon shape for each song.
 - Playback, seeking, stem visibility, motion strength, fullscreen mode, and a compact color wheel for each ribbon.
 - A bundled 20-second sample track for trying the app without supplying music.
+- A local song library that reopens analyzed music and its ribbon data without analyzing it again.
 - Local processing: your audio is not uploaded to a third-party service.
 
 ## Run locally
@@ -33,7 +34,7 @@ Open **http://127.0.0.1:8765** if the browser does not open automatically. Stop 
 1. Choose or drag in an MP3 or WAV file (up to 5 minutes and 50 MB), then select **Analyze**. The interface is currently in Korean.
 2. When analysis finishes, play or seek through the track with the audio controls. Ribbon motion follows the separated stems.
 3. Adjust motion strength and visibility. Choose a color preset or click a stem's swatch to use the color wheel and brightness bar. Your custom colors persist in this browser.
-4. Select **20-second sample test** to try the included track, or delete the current song's analysis data with the delete button.
+4. Select a song from **Saved songs on this device** to reopen its audio and ribbons. Select **20-second sample test** to try the included track, or delete the current song's analysis data with the delete button.
 
 Analysis is performed before playback, not in real time. A song's content determines its ribbon shape, so reopening the same analyzed song reproduces that shape. Quiet or absent stems may barely move.
 
@@ -41,7 +42,7 @@ Analysis is performed before playback, not in real time. A song's content determ
 
 The pinned [Demucs commit](https://github.com/adefossez/demucs/tree/2883f3db65617d6d178c6ed10d869dc14e44e59b) produces four stems. The app extracts 50 Hz energy and onset data from each stem and uses those values to animate a WebGL mesh. Its ribbon geometry ports the cubic B-spline and swept cross-section ideas from the pinned [fogleman/ribbon commit](https://github.com/fogleman/ribbon/tree/568057efb726b6f8b8a5c6b067a27f411a77f487) to JavaScript. [Three.js](https://threejs.org/) renders the scene.
 
-The server listens on the local loopback address. Uploaded audio, separated stems, and analysis results are saved under `data/`; downloaded model files are saved under `models/`. These directories are excluded from Git. The delete button removes one song's local analysis files, while keeping the model cache.
+The server listens on the local loopback address. For each successful analysis, `data/` keeps the original uploaded file and the small ribbon-feature file. The saved-song list reads these existing files; it creates no second copy of the audio or ribbons. The decoded WAV is temporary; separated stems are used in memory and are not saved as WAV files. Existing completed jobs shed older decoded and stem WAV files on the next server start without losing cached results. The browser plays the original MP3 or WAV. Downloaded model files remain under `models/` so they do not have to be downloaded again. Both directories are excluded from Git. The delete button removes one song's local analysis files and its library entry while keeping the model cache.
 
 ## Limits and testing
 

@@ -20,6 +20,19 @@ from worker import CONFIG_KEY, write_json
 BASE = Path(__file__).resolve().parent
 MAX_BYTES = 50 * 1024 * 1024
 ACTIVE = {'queued', 'decoding', 'loading', 'separating', 'features'}
+SOURCE_NAMES = {'input.mp3', 'input.wav'}
+
+
+def remove_intermediates(path):
+    """Keep only the uploaded audio and features needed for playback and reuse."""
+    (path / 'audio.wav').unlink(missing_ok=True)
+    shutil.rmtree(path / 'stems', ignore_errors=True)
+
+
+def remove_failed_files(path, state):
+    remove_intermediates(path)
+    if state.get('source') in SOURCE_NAMES:
+        (path / state['source']).unlink(missing_ok=True)
 
 
 class Manager:
@@ -34,6 +47,18 @@ class Manager:
             if state.get('status') in ACTIVE:
                 state.update(status='failed', message='이전 분석이 중단되었습니다. 파일을 다시 선택하세요.')
                 write_json(path, state)
+            if state.get('status') == 'ready' and not self.complete(path.parent, state):
+                state.update(status='failed', message='결과 파일이 누락되었습니다. 파일을 다시 선택하세요.')
+                write_json(path, state)
+            if state.get('status') == 'ready':
+                remove_intermediates(path.parent)
+            elif state.get('status') == 'failed':
+                remove_failed_files(path.parent, state)
+
+    @staticmethod
+    def complete(path, state):
+        source = state.get('source')
+        return source in SOURCE_NAMES and (path / source).is_file() and (path / 'features.json').is_file()
 
     def directory(self, jid):
         if not re.fullmatch('[a-f0-9]{64}', jid):
@@ -66,10 +91,11 @@ class Manager:
             if state['status'] in ACTIVE:
                 state.update(status='failed', message='분석 프로세스가 종료되었습니다. 다시 시도하세요.')
                 write_json(path / 'job.json', state)
-        if state['status'] == 'ready' and not all((path / f).exists() for f in
-                ['audio.wav', 'features.json', 'stems/drums.wav', 'stems/bass.wav', 'stems/other.wav', 'stems/vocals.wav']):
+                remove_failed_files(path, state)
+        if state['status'] == 'ready' and not self.complete(path, state):
             state.update(status='failed', message='결과 파일이 누락되었습니다. 파일을 다시 선택하세요.')
             write_json(path / 'job.json', state)
+            remove_failed_files(path, state)
         return state
 
     def stop(self):
@@ -111,6 +137,26 @@ def create_app(data_dir=None):
     @app.get('/api/health')
     def health():
         return {'app':'ribbon-music', 'ok': True, 'busy': manager.busy(), 'active_id':manager.active_id if manager.busy() else None}
+
+    @app.get('/api/library')
+    def library():
+        items = []
+        for state_path in manager.root.glob('*/job.json'):
+            directory = state_path.parent
+            if not re.fullmatch('[a-f0-9]{64}', directory.name):
+                continue
+            try:
+                state = json.loads(state_path.read_text())
+                if state.get('id') != directory.name or state.get('status') != 'ready' or not manager.complete(directory, state):
+                    continue
+                items.append({'id': directory.name, 'name': state.get('name') or state['source'],
+                              'duration': state.get('duration', 0), 'modified': state_path.stat().st_mtime})
+            except (OSError, ValueError, KeyError):
+                continue
+        items.sort(key=lambda item: item['modified'], reverse=True)
+        for item in items:
+            del item['modified']
+        return {'items': items}
 
     @app.post('/api/jobs', status_code=202)
     async def upload(file: UploadFile = File(...)):
@@ -165,8 +211,10 @@ def create_app(data_dir=None):
         if kind not in {'features', 'audio'}: raise HTTPException(404)
         state = manager.status(jid)
         if state['status'] != 'ready': raise HTTPException(409, '분석이 아직 완료되지 않았습니다.')
-        path = manager.directory(jid) / ('features.json' if kind == 'features' else 'audio.wav')
-        return FileResponse(path, media_type='application/json' if kind == 'features' else 'audio/wav')
+        path = manager.directory(jid) / ('features.json' if kind == 'features' else state['source'])
+        media_type = ('application/json' if kind == 'features' else
+                      'audio/mpeg' if state['source'].endswith('.mp3') else 'audio/wav')
+        return FileResponse(path, media_type=media_type)
 
     @app.delete('/api/jobs/{jid}')
     async def delete(jid: str):

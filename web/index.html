@@ -3,6 +3,7 @@
 <body>
 <main>
 <form id="upload"><label for="file">음악 파일 (MP3/WAV, 최대 5분·50MB)</label> <input id="file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" required> <button id="analyze">분석</button> <button id="sample" type="button">20초 샘플 테스트</button></form>
+<div><label for="library">이 기기에 저장된 곡</label> <select id="library"><option value="">곡 선택</option></select> <button id="load-library" type="button" disabled>불러오기</button></div>
 <p id="status" role="status" aria-live="polite">음악 파일을 선택하거나 이 화면에 끌어 놓으세요.</p>
 <p id="track"></p>
 <div id="visual"><canvas id="canvas" aria-label="음악에 반응하는 네 악기의 입체 리본"></canvas><p id="empty">분석이 끝나면 이곳에 리본이 표시됩니다.</p></div>
@@ -27,4 +28,4 @@
 <button id="remove" disabled type="button">이 곡의 분석 결과 삭제</button>
 <p class="help">음악은 이 컴퓨터에서 처리됩니다. 최초 분석 시 분리 모델을 내려받습니다.</p>
 <details><summary>테스트 음악 출처</summary><p>“Carefree” — Kevin MacLeod (incompetech.com). <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400037" target="_blank" rel="noreferrer">원곡</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. 원곡 00:20–00:40 구간을 20초 MP3로 발췌했습니다.</p></details>
-</main><script type="module" src="/app.js?v=4"></script></body></html>
+</main><script type="module" src="/app.js?v=5"></script></body></html>

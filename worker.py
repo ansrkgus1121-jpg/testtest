@@ -45,9 +45,10 @@ def run(job_dir: Path):
         state.update(status=status, message=message, **extra)
         write_json(job_dir / 'job.json', state)
 
+    decoded = job_dir / 'audio.wav'
     try:
         stage('decoding', '음악 파일 확인 중')
-        info = decode_audio(job_dir / state['source'], job_dir / 'audio.wav')
+        info = decode_audio(job_dir / state['source'], decoded)
         stage('loading', '분리 모델 준비 중 · 최초 실행은 모델 다운로드가 필요합니다', duration=info.duration)
         import torch
         from demucs.api import Separator
@@ -56,18 +57,16 @@ def run(job_dir: Path):
         torch.manual_seed(0)
         separator = Separator(model=MODEL, device='cpu', shifts=0, segment=7,
                               split=True, overlap=.25, progress=True, jobs=0)
-        signal, sr = sf.read(job_dir / 'audio.wav', dtype='float32', always_2d=True)
+        signal, sr = sf.read(decoded, dtype='float32', always_2d=True)
         stage('separating', '보컬·드럼·베이스·기타 반주 분리 중')
         with torch.inference_mode():
             _, stems = separator.separate_tensor(torch.from_numpy(signal.T.copy()), sr)
         stage('features', '리본 반응 데이터 준비 중')
         data = {'fps': FPS, 'duration': info.duration, 'model': MODEL,
                 'demucs_commit': DEMUCS_COMMIT, 'stems': {}}
-        (job_dir / 'stems').mkdir(exist_ok=True)
         for name, tensor in stems.items():
             samples = tensor.cpu().numpy()
             data['stems'][name] = extract_features(samples, sr)
-            sf.write(job_dir / 'stems' / f'{name}.wav', samples.T, sr, subtype='FLOAT')
         write_json(job_dir / 'features.json', data)
         stage('ready', '분석 완료', elapsed_seconds=round(time.monotonic() - start, 2))
     except Exception as exc:
@@ -75,6 +74,11 @@ def run(job_dir: Path):
         traceback.print_exc()
         message = str(exc) if isinstance(exc, ValueError) else '분석에 실패했습니다. 모델 다운로드 연결과 저장 공간을 확인한 뒤 다시 시도하세요.'
         stage('failed', message)
+    finally:
+        decoded.unlink(missing_ok=True)
+        shutil.rmtree(job_dir / 'stems', ignore_errors=True)
+        if state['status'] == 'failed':
+            (job_dir / state['source']).unlink(missing_ok=True)
 
 
 if __name__ == '__main__':
