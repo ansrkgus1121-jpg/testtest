@@ -1,0 +1,13 @@
+# Local audio and model data
+data/
+models/
+.venv/
+
+# Python, tests, and system files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# Local run artifacts
+*.log

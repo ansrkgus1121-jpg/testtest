@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>음악 리본</title><link rel="stylesheet" href="/style.css?v=4"><link rel="stylesheet" href="/picker.css?v=2"></head>
+<body>
+<main>
+<form id="upload"><label for="file">음악 파일 (MP3/WAV, 최대 5분·50MB)</label> <input id="file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" required> <button id="analyze">분석</button> <button id="sample" type="button">20초 샘플 테스트</button></form>
+<p id="status" role="status" aria-live="polite">음악 파일을 선택하거나 이 화면에 끌어 놓으세요.</p>
+<p id="track"></p>
+<div id="visual"><canvas id="canvas" aria-label="음악에 반응하는 네 악기의 입체 리본"></canvas><p id="empty">분석이 끝나면 이곳에 리본이 표시됩니다.</p></div>
+<div id="playback"><audio id="audio" controls preload="metadata" aria-label="음악 재생 및 시간 탐색"></audio><button id="fullscreen" type="button">전체 화면</button></div>
+<fieldset id="settings" disabled><legend>리본 설정</legend>
+<label>반응 강도 <input id="strength" type="range" min="0" max="2" step="0.05" value="1"> <output id="strengthValue">1.00</output></label>
+<label>색상 <select id="palette"><option value="default">기본</option><option value="bright">밝은색</option><option value="mono">단색</option><option value="custom">직접 설정</option></select></label>
+<label><input id="motion" type="checkbox" checked> 움직임 표시</label>
+<div id="stems">
+<label><input type="checkbox" data-stem="vocals" checked> 보컬 <meter id="meter-vocals" min="0" max="1" value="0"></meter></label>
+<label><input type="checkbox" data-stem="drums" checked> 드럼 <meter id="meter-drums" min="0" max="1" value="0"></meter></label>
+<label><input type="checkbox" data-stem="bass" checked> 베이스 <meter id="meter-bass" min="0" max="1" value="0"></meter></label>
+<label><input type="checkbox" data-stem="other" checked> 기타 반주 <meter id="meter-other" min="0" max="1" value="0"></meter></label>
+</div>
+<div id="ribbon-colors" aria-label="리본별 색상 선택">
+<div class="color-row"><span>보컬</span><button type="button" class="color-trigger" data-color="vocals" aria-label="보컬 색상 선택"><span class="swatch" aria-hidden="true"></span></button></div>
+<div class="color-row"><span>드럼</span><button type="button" class="color-trigger" data-color="drums" aria-label="드럼 색상 선택"><span class="swatch" aria-hidden="true"></span></button></div>
+<div class="color-row"><span>베이스</span><button type="button" class="color-trigger" data-color="bass" aria-label="베이스 색상 선택"><span class="swatch" aria-hidden="true"></span></button></div>
+<div class="color-row"><span>기타 반주</span><button type="button" class="color-trigger" data-color="other" aria-label="기타 반주 색상 선택"><span class="swatch" aria-hidden="true"></span></button></div>
+</div></fieldset>
+<dialog id="color-dialog" aria-labelledby="color-title"><div class="picker-heading"><strong id="color-title">리본 색상</strong><button id="color-close" type="button" aria-label="색상 선택 닫기">닫기</button></div><div class="picker-surface"><canvas id="color-wheel" width="240" height="240" tabindex="0" role="slider" aria-label="색상 휠. 좌우 방향키로 색조, 위아래 방향키로 채도를 조절합니다"></canvas><canvas id="brightness-bar" width="24" height="240" tabindex="0" role="slider" aria-label="밝기. 위아래 방향키로 조절합니다" aria-valuemin="0" aria-valuemax="100"></canvas></div><div id="picked-color" aria-label="선택한 색상"></div></dialog>
+<button id="remove" disabled type="button">이 곡의 분석 결과 삭제</button>
+<p class="help">음악은 이 컴퓨터에서 처리됩니다. 최초 분석 시 분리 모델을 내려받습니다.</p>
+<details><summary>테스트 음악 출처</summary><p>“Carefree” — Kevin MacLeod (incompetech.com). <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400037" target="_blank" rel="noreferrer">원곡</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. 원곡 00:20–00:40 구간을 20초 MP3로 발췌했습니다.</p></details>
+</main><script type="module" src="/app.js?v=4"></script></body></html>

@@ -1,0 +1,68 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const fs=require('node:fs');
+const base=process.env.RIBBON_URL||'http://127.0.0.1:8765';
+const app=path.resolve(__dirname,'..');
+const sample=path.join(app,'samples/carefree-20s.mp3');
+const second=path.resolve(app,'../../work/second-song.mp3');
+
+(async()=>{
+ const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ const page=await browser.newPage({viewport:{width:1200,height:1000}});
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ try{
+  await page.goto(base);
+  assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
+  assert.equal(await page.locator('#visual').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(0, 0, 0)');
+  await page.locator('#file').setInputFiles(sample);await page.locator('#analyze').click();
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('분석 완료'),{},{timeout:120000});
+  const firstId=(await page.locator('audio').getAttribute('src')).split('/')[3];
+  const background=await page.locator('#canvas').evaluate(canvas=>{
+   const gl=canvas.getContext('webgl2');const pixel=new Uint8Array(4);
+   gl.readPixels(1,1,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);return [...pixel];
+  });
+  assert.deepEqual(background.slice(0,3),[0,0,0],'the WebGL clear color is pure black');
+  await page.locator('#motion').uncheck();
+  await page.locator('audio').evaluate(audio=>audio.currentTime=8);await page.waitForTimeout(300);
+  const before=await page.locator('#canvas').screenshot();
+  const row=page.locator('[data-color="drums"]');
+  const originalSwatch=await row.locator('.swatch').evaluate(el=>getComputedStyle(el).backgroundColor);
+  await row.click();
+  assert.equal(await page.locator('#color-dialog').evaluate(el=>el.open),true);
+  const wheel=await page.locator('#color-wheel').boundingBox();
+  await page.mouse.click(wheel.x+wheel.width*.95,wheel.y+wheel.height*.5);
+  const bar=await page.locator('#brightness-bar').boundingBox();
+  await page.mouse.click(bar.x+bar.width/2,bar.y+bar.height*.12);
+  const chosenSwatch=await row.locator('.swatch').evaluate(el=>getComputedStyle(el).backgroundColor);
+  assert.notEqual(originalSwatch,chosenSwatch);
+  assert.equal(await page.locator('#palette').inputValue(),'custom');
+  await page.locator('#color-close').click();
+  await page.waitForTimeout(200);
+  const custom=await page.locator('#canvas').screenshot();
+  assert.ok(!before.equals(custom),'color wheel updates the visible ribbon');
+  await page.reload();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('분석 완료'));
+  assert.equal(await page.locator('#palette').inputValue(),'custom');
+  assert.equal(await page.locator('[data-color="drums"] .swatch').evaluate(el=>getComputedStyle(el).backgroundColor),chosenSwatch);
+  await page.locator('#motion').uncheck();
+  await page.locator('audio').evaluate(audio=>audio.currentTime=8);await page.waitForTimeout(350);
+  assert.ok(custom.equals(await page.locator('#canvas').screenshot()),'same song and palette values reproduce the same shape');
+  await page.locator('#file').setInputFiles(second);await page.locator('#analyze').click();
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('분석 완료'),{},{timeout:120000});
+  const secondId=(await page.locator('audio').getAttribute('src')).split('/')[3];
+  assert.notEqual(firstId,secondId);
+  assert.equal(await page.locator('[data-color="drums"] .swatch').evaluate(el=>getComputedStyle(el).backgroundColor),chosenSwatch,'custom color is kept for a new song');
+  await page.locator('#motion').uncheck();
+  await page.locator('audio').evaluate(audio=>audio.currentTime=1);await page.waitForTimeout(300);
+  assert.ok(!custom.equals(await page.locator('#canvas').screenshot()),'new song changes the static shape');
+  await page.locator('#palette').selectOption('bright');
+  assert.notEqual(await row.locator('.swatch').evaluate(el=>getComputedStyle(el).backgroundColor),chosenSwatch);
+  await page.locator('#palette').selectOption('custom');
+  assert.equal(await row.locator('.swatch').evaluate(el=>getComputedStyle(el).backgroundColor),chosenSwatch,'custom color is recoverable after a preset');
+  assert.deepEqual(errors,[]);
+  const result={passed:true,firstId,secondId,whitePageBlackVisual:true,colorWheelLiveUpdate:true,colorRestoredAfterReload:true,sameSongShapeStable:true,differentSongShape:true,presetRoundTrip:true};
+  fs.writeFileSync(path.resolve(app,'../customization-test-results.json'),JSON.stringify(result,null,2));
+  await page.screenshot({path:path.resolve(app,'../customization-screenshot.png'),fullPage:true});
+  console.log(result);
+ }finally{await browser.close()}
+})().catch(error=>{console.error(error);process.exit(1)});
